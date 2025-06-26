@@ -34,9 +34,14 @@ jobs:
       fail-fast: false # <--- Recommended for matrix jobs if one failure shouldn't stop others
       matrix:
         python-version: ['3.8', '3.9', '3.10', '3.11', '3.12','3.13']
-    if: github.event_name != 'workflow_dispatch' || github.event.inputs.python_version == 'all' || contains(github.event.inputs.python_version, matrix.python-version)
 
     steps:
+      - name: Skip job if Python version not selected
+        if: github.event_name == 'workflow_dispatch' && github.event.inputs.python_version != 'all' && github.event.inputs.python_version != matrix.python-version
+        run: |
+          echo "Skipping this job as Python version ${{ matrix.python-version }} was not selected for manual run."
+          exit 0 # Exit successfully to mark this step as green but effectively stop the job
+
       - name: Checkout repository
         uses: actions/checkout@v4
 
