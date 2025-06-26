@@ -22,11 +22,11 @@ on:
           - '3.11'
           - '3.12'
           - '3.13'
-        run_lint_and_format_checks:
-          description: 'Run linting and formatting checks?'
-          required: false
-          default: 'true'
-          type: boolean
+      run_lint_and_format_checks:
+        description: 'Run linting and formatting checks?'
+        required: false
+        default: true
+        type: boolean
 jobs:
   build:
     runs-on: ubuntu-latest
