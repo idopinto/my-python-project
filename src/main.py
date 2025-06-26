@@ -1,5 +1,6 @@
 # src/main.py
 
+
 def add(a, b):
     """Adds two numbers."""
 
