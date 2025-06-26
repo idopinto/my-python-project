@@ -8,12 +8,33 @@ on:
   pull_request:
     branches:
       - main # or master
+  workflow_dispatch:
+    inputs:
+      python_version:
+        description: 'Python version to test (e.g., 3.10, 3.11, or all)'
+        default: 'all'
+        type: choice
+        options:
+          - 'all'
+          - '3.8'
+          - '3.9'
+          - '3.10'
+          - '3.11'
+          - '3.12'
+          - '3.13'
+        run_lint_and_format_checks:
+          description: 'Run linting and formatting checks?'
+          required: false
+          default: 'true'
+          type: boolean
 jobs:
   build:
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false # <--- Recommended for matrix jobs if one failure shouldn't stop others
       matrix:
         python-version: ['3.8', '3.9', '3.10', '3.11', '3.12','3.13']
+    if: github.event_name != 'workflow_dispatch' || github.event.inputs.python_version == 'all' || contains(github.event.inputs.python_version, matrix.python-version)
 
     steps:
       - name: Checkout repository
@@ -30,9 +51,12 @@ jobs:
           python -m pip install --upgrade pip
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
       - name: Lint with Flake8
+        if: github.event.inputs.run_lint_and_format_checks == 'true' || github.event_name != 'workflow_dispatch' # Run if input is true or if not a manual dispatch
+
         run: flake8 src/ tests/ --count --show-source --statistics
 
       - name: Check code with formatting with Black
+        if: github.event.inputs.run_lint_and_format_checks == 'true' || github.event_name != 'workflow_dispatch' # Run if input is true or if not a manual dispatch
         run: |
           black --check --diff src/ tests/
       - name: Run tests and collect coverage
