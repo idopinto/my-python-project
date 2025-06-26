@@ -23,6 +23,8 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
+          cache: 'pip'  # Enable pip caching
+          cache-dependency-path: requirements.txt  # Tell it which file to use for cache key
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
