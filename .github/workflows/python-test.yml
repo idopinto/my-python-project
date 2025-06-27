@@ -4,10 +4,10 @@ name: Python CI
 on:
   push:
     branches:
-      - main # or master, depending on your default branch name
+      - main
   pull_request:
     branches:
-      - main # or master
+      - main
   workflow_dispatch:
     inputs:
       python_version:
@@ -27,66 +27,92 @@ on:
         required: false
         default: true
         type: boolean
+
 jobs:
   build:
     runs-on: ubuntu-latest
     strategy:
-      fail-fast: false # <--- Recommended for matrix jobs if one failure shouldn't stop others
+      fail-fast: false
       matrix:
         python-version: ['3.8', '3.9', '3.10', '3.11', '3.12','3.13']
 
     steps:
-      - name: Skip job if Python version not selected
-        if: github.event_name == 'workflow_dispatch' && github.event.inputs.python_version != 'all' && github.event.inputs.python_version != matrix.python-version
+      # This helper step determines if the current job should be active or skipped
+      - name: Set job active status
+        id: set_active_status # Give this step an ID to reference its output
         run: |
-          echo "Skipping this job as Python version ${{ matrix.python-version }} was not selected for manual run."
-          exit 0 # Exit successfully to mark this step as green but effectively stop the job
+          # Default to active if not workflow_dispatch, or if 'all' is selected
+          ACTIVE_JOB="true"
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" && \
+                "${{ github.event.inputs.python_version }}" != "all" ]]; then
+            # If it's workflow_dispatch and a specific version is chosen
+            if [[ "${{ github.event.inputs.python_version }}" == "${{ matrix.python-version }}" ]]; then
+              # This is the selected version, so it's active
+              ACTIVE_JOB="true"
+            else
+              # This is NOT the selected version, so it's not active
+              ACTIVE_JOB="false"
+            fi
+          fi
+          echo "Current job (Python ${{ matrix.python-version }}): ACTIVE_JOB=$ACTIVE_JOB"
+          echo "ACTIVE_JOB=$ACTIVE_JOB" >> $GITHUB_OUTPUT # Make the variable available to other steps
+
+      # Now, add an 'if' condition to ALL subsequent main steps
+      # This condition checks if the 'set_active_status' step determined the job should be active
+      # if: steps.set_active_status.outputs.ACTIVE_JOB == 'true'
 
       - name: Checkout repository
+        if: steps.set_active_status.outputs.ACTIVE_JOB == 'true'
         uses: actions/checkout@v4
 
       - name: Set up Python ${{ matrix.python-version }}
+        if: steps.set_active_status.outputs.ACTIVE_JOB == 'true'
         uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
-          cache: 'pip'  # Enable pip caching
-          cache-dependency-path: requirements.txt  # Tell it which file to use for cache key
+          cache: 'pip'
+          cache-dependency-path: requirements.txt
+
       - name: Install dependencies
+        if: steps.set_active_status.outputs.ACTIVE_JOB == 'true'
         run: |
           python -m pip install --upgrade pip
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
-      - name: Lint with Flake8
-        if: github.event.inputs.run_lint_and_format_checks == 'true' || github.event_name != 'workflow_dispatch' # Run if input is true or if not a manual dispatch
 
+      - name: Lint with Flake8
+        if: steps.set_active_status.outputs.ACTIVE_JOB == 'true' && (github.event.inputs.run_lint_and_format_checks == 'true' || github.event_name != 'workflow_dispatch')
         run: flake8 src/ tests/ --count --show-source --statistics
 
-      - name: Check code with formatting with Black
-        if: github.event.inputs.run_lint_and_format_checks == 'true' || github.event_name != 'workflow_dispatch' # Run if input is true or if not a manual dispatch
+      - name: Check code formatting with Black
+        if: steps.set_active_status.outputs.ACTIVE_JOB == 'true' && (github.event.inputs.run_lint_and_format_checks == 'true' || github.event_name != 'workflow_dispatch')
         run: |
           black --check --diff src/ tests/
+
       - name: Run tests and collect coverage
+        if: steps.set_active_status.outputs.ACTIVE_JOB == 'true'
         run: |
           coverage run -m unittest discover -s tests
-          coverage report -m # Print summary to console
-          coverage html -d htmlcov # Generate HTML report in htmlcov/ directory
+          coverage report -m
+          coverage html -d htmlcov
+
       - name: Upload coverage report
+        if: steps.set_active_status.outputs.ACTIVE_JOB == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: coverage-report-python-${{ matrix.python-version }}
           path: htmlcov/
           retention-days: 7
+
   notify-on-failure:
     runs-on: ubuntu-latest
     needs: build
     if: failure()
-
     steps:
       - name: Send Slack notification
         uses: rtCamp/action-slack-notify@v2
         env:
           SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK_URL }}
-          SLACK_MESSAGE: "❌ Build failed for ${{ github.repository }} on branch `${{ github.ref_name }}`!
-                          Check out the logs: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
-          SLACK_COLOR: "danger" # Red color for failure
+          SLACK_MESSAGE: "❌ Build failed for ${{ github.repository }} on branch `${{ github.ref_name }}`! Check out the logs: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          SLACK_COLOR: "danger"
           SLACK_USERNAME: "GitHub Actions Bot"
           SLACK_ICON_EMOJI: ":x:"
